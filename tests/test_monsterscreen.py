@@ -19,6 +19,8 @@ from monsterscreen.dropbox_sync import DropboxError, FolderSync, content_hash
 from monsterscreen.state import State, StateStore, SyncStatus
 from monsterscreen.transcode import Transcoder
 from monsterscreen.wifi import Wifi, WifiError
+from monsterscreen.screen_time import (Override, WeekSchedule, base_schedule, describe, is_on,
+                                       next_start, next_time_of_day)
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "voorbeeld" / "config.toml"
 
@@ -423,8 +425,61 @@ class SetupWebTest(unittest.TestCase):
         page = self.post("/wifi/remove", name="netplan-wlan0-Kantoor")
         self.assertIn("in gebruik", page)
 
+    def test_screen_off_and_on_until(self):
+        self.store.update(app_key="KEY", refresh_token="t", folder=FakeDropbox.BASE + "/Kantine")
+        self.app.now = lambda: dt.datetime(2026, 10, 23, 14, 0)  # Friday afternoon
+        page = self.get()
+        self.assertIn("Aan, volgens schema", page)  # no schedule anywhere: always on
+        self.assertIn("action='/screen/off'", page)
+        self.assertNotIn("Volgens schema</button>", page)
+
+        page = self.post("/screen/off")
+        self.assertIn("uit tot je het weer aanzet", page)  # no schedule to switch it back on
+        self.assertEqual(self.store.get().override, {"on": False, "until": None})
+        self.assertNotIn("action='/screen/off'", page)
+        self.assertIn("Volgens schema</button>", page)
+
+        page = self.post("/screen/on-until", until="03:00")
+        self.assertIn("blijft aan tot morgen 03:00", page)
+        self.assertEqual(self.store.get().override, {"on": True, "until": "2026-10-24T03:00:00"})
+        page = self.post("/screen/on-until", until="25:00")
+        self.assertIn("Ongeldige tijd", page)
+
+        page = self.post("/screen/auto")
+        self.assertIn("volgt weer het schema", page)
+        self.assertIsNone(self.store.get().override)
+
+    def test_week_schedule(self):
+        self.store.update(app_key="KEY", refresh_token="t", folder=FakeDropbox.BASE + "/Kantine")
+        self.app.now = lambda: dt.datetime(2026, 10, 23, 14, 0)  # Friday afternoon
+        page = self.get()
+        self.assertIn("altijd aan", page)  # config.toml has no schedule either
+        self.assertIn("name='monday_from' value='08:00'", page)
+
+        fields = {"enabled": "on"}
+        for day in ("monday", "tuesday", "wednesday", "thursday", "friday"):
+            fields.update({f"{day}_on": "on", f"{day}_from": "08:00", f"{day}_to": "18:00"})
+        page = self.post("/schedule", **fields)
+        self.assertIn("weekschema is opgeslagen", page)
+        self.assertEqual(self.store.get().week_schedule["friday"], "08:00-18:00")
+        self.assertEqual(self.store.get().week_schedule["saturday"], "off")
+        self.assertIn("Aan, volgens schema tot 18:00", page)
+
+        page = self.post("/screen/off")  # off until the schedule starts again: Monday
+        self.assertIn("uit tot ma 08:00", page)
+        self.assertIn("Uit tot ma 08:00", page)
+
+        page = self.post("/schedule", **{**fields, "monday_to": "kwart over"})
+        self.assertIn("Maandag: Ongeldige tijd", page)
+        self.assertEqual(self.store.get().week_schedule["monday"], "08:00-18:00")  # unchanged
+
+        del fields["enabled"]
+        page = self.post("/schedule", **fields)
+        self.assertIn("schema uit config.toml geldt", page)
+        self.assertIn("name='friday_to' value='18:00'", page)  # times kept for later
+
     def test_shut_down(self):
-        self.assertNotIn("Uitschakelen", self.get())  # no shutdown given: no button
+        self.assertNotIn("/power/off", self.get())  # no shutdown given: no button
         calls = []
         self.app.shutdown = lambda: calls.append("off")
         page = self.get()
@@ -627,6 +682,57 @@ class NetinfoTest(unittest.TestCase):
                          "pisignage\n\nGeen netwerkverbinding")
         self.assertEqual(netinfo.format_summary("pisignage", False, [netinfo.Link("wifi")], 8080),
                          "pisignage\n\nWifi: nog geen IP-adres")
+
+
+class ScreenTimeTest(unittest.TestCase):
+    FRIDAY = dt.datetime(2026, 10, 23, 14, 0)
+
+    def week(self, **days):
+        return WeekSchedule.from_state({"enabled": True, **days})
+
+    def test_overnight_and_all_day(self):
+        week = self.week(friday="18:00-02:00", sunday="00:00-00:00")
+        at = lambda d, h, m=0: dt.datetime(2026, 10, d, h, m)  # 23 = Friday
+        self.assertFalse(week.is_on(at(23, 17, 59)))
+        self.assertTrue(week.is_on(at(23, 18)))
+        self.assertTrue(week.is_on(at(24, 1, 59)))  # Saturday night, still Friday's period
+        self.assertFalse(week.is_on(at(24, 2)))
+        self.assertFalse(week.is_on(at(24, 12)))  # Saturday not set: off
+        self.assertTrue(week.is_on(at(25, 0)))
+        self.assertTrue(week.is_on(at(25, 23, 59)))
+        self.assertEqual(WeekSchedule.from_state(week.to_state()), week)
+
+    def test_next_start_and_time_of_day(self):
+        week = self.week(**{d: "08:00-18:00" for d in
+                            ("monday", "tuesday", "wednesday", "thursday", "friday")})
+        self.assertEqual(next_start(week, self.FRIDAY), dt.datetime(2026, 10, 26, 8, 0))
+        self.assertIsNone(next_start(self.week(), self.FRIDAY))  # never on
+        self.assertEqual(next_time_of_day(self.FRIDAY, "03:00"), dt.datetime(2026, 10, 24, 3, 0))
+        self.assertEqual(next_time_of_day(self.FRIDAY, "23:30"), dt.datetime(2026, 10, 23, 23, 30))
+        with self.assertRaises(ValueError):
+            next_time_of_day(self.FRIDAY, "3 uur")
+
+    def test_override_and_description(self):
+        week = self.week(friday="08:00-18:00", monday="08:00-18:00")
+        now = self.FRIDAY
+        self.assertEqual(describe(week, None, now), "Aan, volgens schema tot 18:00")
+        self.assertEqual(describe(week, None, now.replace(hour=19)), "Uit, volgens schema tot ma 08:00")
+        late = Override(True, dt.datetime(2026, 10, 24, 3, 0))
+        self.assertTrue(is_on(week, late, now.replace(hour=23)))
+        self.assertEqual(describe(week, late, now.replace(hour=23)), "Aan tot morgen 03:00")
+        self.assertFalse(is_on(week, late, dt.datetime(2026, 10, 24, 3, 0)))  # expired
+        off = Override(False, None)
+        self.assertFalse(is_on(week, off, now))
+        self.assertEqual(describe(week, off, now), "Uit tot je het weer verandert")
+        self.assertEqual(Override.from_state(late.to_state()), late)
+
+    def test_base_schedule(self):
+        from_config = parse({"schedule": {"enabled": True, "friday": "off"}}).schedule
+        self.assertIs(base_schedule(None, from_config), from_config)
+        self.assertIs(base_schedule({"enabled": False, "friday": "08:00-18:00"}, from_config),
+                      from_config)
+        self.assertTrue(base_schedule({"enabled": True, "friday": "08:00-18:00"},
+                                      from_config).is_on(self.FRIDAY))
 
 
 if __name__ == "__main__":

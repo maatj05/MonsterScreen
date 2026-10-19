@@ -121,13 +121,26 @@ uitleg. Samengevat:
 | `[display]` | duur per foto, volgorde (naam / nieuwste / willekeurig), geluid, max. videoduur, beeldvullend of niet, draaien |
 | `[sync]` | hoe vaak Dropbox gecontroleerd wordt |
 | `[files."naam.jpg"]` | per bestand: andere `duration`, `skip`, of alleen tonen `from`/`until` een datum |
-| `[schedule]` | automatisch aan/uit per weekdag, met uitzonderingen per datum in `[schedule.dates]` |
+| `[schedule]` | automatisch aan/uit per weekdag, met uitzonderingen per datum in `[schedule.dates]`; geldt alleen als er op de instelpagina geen weekschema aan staat |
 | `[news]` | gereserveerd voor nieuwsberichten (latere versie) |
 
-## Scherm automatisch aan en uit
+## Scherm aan en uit
 
-Buiten de tijden in `[schedule]` gaat het scherm uit. *Hoe* dat gebeurt hangt
-van het scherm af en stel je in `settings.toml` op de Pi in (`[power] method`):
+Op de instelpagina, per scherm:
+
+- **Weekschema:** per dag een tijd van–tot, of de hele dag uit. Een eindtijd
+  vóór de begintijd loopt door na middernacht (18:00 – 02:00); 00:00 – 00:00
+  is de hele dag aan. Staat het weekschema uit, dan geldt `[schedule]` uit
+  `config.toml` (en zonder dat is het scherm altijd aan).
+- **Scherm uit:** zwart tot het schema het scherm weer aanzet (zonder schema:
+  tot je **Volgens schema** kiest). De Pi blijft draaien en bereikbaar.
+- **Aan houden tot** een tijd, bv. vandaag tot 03:00: daarna volgt het scherm
+  weer het schema.
+- **Volgens schema** heft *Scherm uit* of *Aan houden tot* op.
+
+Een knop werkt meteen als het scherm uit staat, en anders vanaf de volgende
+foto of video. *Hoe* het scherm uit gaat hangt van het scherm af en stel je in
+`settings.toml` op de Pi in (`[power] method`):
 
 | Methode | Wanneer |
 |---|---|

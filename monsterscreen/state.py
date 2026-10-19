@@ -1,4 +1,5 @@
-"""What the setup page decides: the Dropbox link and the chosen presentation.
+"""What the setup page decides: the Dropbox link, the chosen presentation,
+the weekly schedule and a temporary on/off override.
 
 Kept apart from settings.toml because the program writes it itself. It holds
 the refresh token, so the file is only readable by its owner.
@@ -19,6 +20,8 @@ class State:
     app_key: str = ""
     refresh_token: str = ""
     folder: str = ""  # full Dropbox path of the chosen presentation
+    week_schedule: dict | None = None  # see screen_time.WeekSchedule.to_state
+    override: dict | None = None  # see screen_time.Override.to_state
 
     @property
     def linked(self) -> bool:

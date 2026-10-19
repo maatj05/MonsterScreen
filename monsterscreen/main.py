@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import netinfo, playlist, settings as settings_mod, web
+from . import netinfo, playlist, screen_time, settings as settings_mod, web
 from .content_config import CONFIG_FILENAME, ContentConfigLoader
 from .dropbox_sync import DropboxClient, FolderSync
 from .player import Mpv
@@ -75,6 +75,13 @@ def setup_message(url: str) -> str:
     return f"Dit scherm is nog niet ingesteld.\n\nGa op een laptop of telefoon naar\n{url}"
 
 
+def screen_should_be_on(state: State, cfg) -> bool:
+    """The weekly schedule (setup page, else config.toml) plus any temporary override."""
+    schedule = screen_time.base_schedule(state.week_schedule, cfg.schedule)
+    override = screen_time.Override.from_state(state.override)
+    return screen_time.is_on(schedule, override, dt.datetime.now())
+
+
 def show_network_info(player: Mpv, web_port: int) -> None:
     """Startup screen with how to reach the Pi. Refreshed while it shows,
     as wifi may only connect a few seconds after the service starts."""
@@ -100,8 +107,11 @@ def run(settings: settings_mod.Settings) -> None:
     wifi = Wifi(settings.wifi_ssid, settings.wifi_password)
     wifi.ensure_default()
     web.serve(web.SetupApp(store, settings.base_folder, status, settings.app_key, wifi=wifi,
-                           shutdown=shut_down_pi),
+                           shutdown=shut_down_pi,
+                           config_schedule=lambda: config_loader.current.schedule),
               settings.web_port)
+    changed = threading.Event()  # a button on the setup page takes effect right away
+    store.on_change(lambda _state: changed.set())
 
     player = Mpv(settings.mpv_args, str(Path(tempfile.gettempdir()) / "monsterscreen-mpv.sock"))
     power = ScreenPower(settings.power_method, settings.on_command, settings.off_command)
@@ -110,7 +120,7 @@ def run(settings: settings_mod.Settings) -> None:
     try:
         show_network_info(player, settings.web_port)
         while True:
-            state, version = store.get(), store.version
+            state = store.get()
             if not state.configured:
                 if screen_on is not True:
                     power.on()
@@ -120,7 +130,7 @@ def run(settings: settings_mod.Settings) -> None:
                 continue
 
             cfg = config_loader.load()
-            should_be_on = cfg.schedule.is_on(dt.datetime.now())
+            should_be_on = screen_should_be_on(state, cfg)
             if should_be_on != screen_on:
                 if should_be_on:
                     power.on()
@@ -129,7 +139,8 @@ def run(settings: settings_mod.Settings) -> None:
                     power.off()
                 screen_on = should_be_on
             if not screen_on:
-                time.sleep(30)
+                changed.wait(30)
+                changed.clear()
                 continue
 
             slides = playlist.build(media_dir, cfg, dt.date.today(),
@@ -147,8 +158,9 @@ def run(settings: settings_mod.Settings) -> None:
             player.apply_settings(cfg.video_sound, cfg.scaling, cfg.rotate)
             for slide in slides:
                 # A new presentation, config or schedule takes effect at the next slide.
-                if (store.version != version or config_loader.load() is not cfg
-                        or not cfg.schedule.is_on(dt.datetime.now())):
+                current = store.get()
+                if (current.folder != state.folder or config_loader.load() is not cfg
+                        or not screen_should_be_on(current, cfg)):
                     break
                 if not slide.path.exists():  # removed by the sync meanwhile
                     continue

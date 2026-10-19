@@ -3,12 +3,14 @@
 From a laptop or phone: link Dropbox, then pick which presentation (a
 subfolder of the base folder) this screen shows. Picking one also puts a
 default config.toml in it when there is none yet. The wifi networks the Pi
-connects to are managed here too, and the Pi can be shut down.
+connects to are managed here too, as are the weekly on/off schedule of the
+screen and temporary exceptions to it, and the Pi can be shut down.
 
 Anyone on the local network can open this page, the same as anyone who can
 walk up to the screen; it never shows the Dropbox token.
 """
 
+import datetime as dt
 import html
 import logging
 import socket
@@ -18,8 +20,8 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 
-from . import dropbox_sync
-from .content_config import CONFIG_FILENAME
+from . import dropbox_sync, screen_time
+from .content_config import CONFIG_FILENAME, WEEKDAYS, Schedule
 from .state import StateStore
 from .wifi import WifiError
 
@@ -64,6 +66,12 @@ section > form { margin-bottom:12px; }
 dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 16px; margin:0; }
 dt { color:var(--muted); } dd { margin:0; overflow-wrap:anywhere; }
 ol { padding-left:20px; margin:0 0 12px; }
+input[type=time] { padding:8px; font:inherit; color:inherit; background:var(--bg);
+                   border:1px solid var(--line); border-radius:6px; }
+.buttons { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.buttons form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0; }
+table.week { border-collapse:collapse; margin-bottom:12px; }
+table.week td { padding:4px 8px 4px 0; white-space:nowrap; }
 """
 
 
@@ -101,8 +109,11 @@ def browse_link(parts: list[str]) -> str:
 class SetupApp:
     def __init__(self, store: StateStore, base_folder: str, status, default_app_key: str = "",
                  client_factory=dropbox_sync.DropboxClient,
-                 exchange_code=dropbox_sync.exchange_code, wifi=None, shutdown=None):
+                 exchange_code=dropbox_sync.exchange_code, wifi=None, shutdown=None,
+                 config_schedule=Schedule):
         self.store = store
+        self.config_schedule = config_schedule  # returns the [schedule] from config.toml
+        self.now = dt.datetime.now
         self.wifi = wifi
         self.shutdown = shutdown
         self.base_folder = "/" + base_folder.strip("/")
@@ -175,6 +186,43 @@ class SetupApp:
         self.store.update(folder=folder)
         return f"Het scherm toont nu '{'/'.join(parts)}'. {note}"
 
+    def _schedule(self, state):
+        return screen_time.base_schedule(state.week_schedule, self.config_schedule())
+
+    def screen_off(self) -> str:
+        now = self.now()
+        until = screen_time.next_start(self._schedule(self.store.get()), now)
+        self.store.update(override=screen_time.Override(False, until).to_state())
+        if until is None:
+            return "Het scherm is uit tot je het weer aanzet."
+        return f"Het scherm is uit tot {screen_time.describe_moment(until, now)}."
+
+    def screen_on_until(self, time: str) -> str:
+        now = self.now()
+        until = screen_time.next_time_of_day(now, time)
+        self.store.update(override=screen_time.Override(True, until).to_state())
+        return f"Het scherm blijft aan tot {screen_time.describe_moment(until, now)}."
+
+    def screen_auto(self) -> str:
+        self.store.update(override=None)
+        return "Het scherm volgt weer het schema."
+
+    def save_schedule(self, form: dict) -> str:
+        days = {}
+        for day, name in zip(WEEKDAYS, screen_time.DAY_NAMES):
+            if not form.get(f"{day}_on"):
+                days[day] = None
+                continue
+            try:
+                days[day] = (screen_time.parse_time(form.get(f"{day}_from", "")),
+                             screen_time.parse_time(form.get(f"{day}_to", "")))
+            except ValueError as e:
+                raise ValueError(f"{name.capitalize()}: {e}") from None
+        enabled = bool(form.get("enabled"))
+        self.store.update(week_schedule=screen_time.WeekSchedule(days, enabled).to_state())
+        return ("Het weekschema is opgeslagen." if enabled else
+                f"Het weekschema staat uit; het schema uit {CONFIG_FILENAME} geldt.")
+
     # --- pages --------------------------------------------------------------
 
     def page(self, body: str) -> str:
@@ -206,6 +254,8 @@ class SetupApp:
                 "<button class='secondary'>Opnieuw koppelen</button></form></section>")
             parts.append(self.folder_section(state, browse))
             if state.folder:
+                parts.append(self.screen_section(state))
+                parts.append(self.schedule_section(state))
                 parts.append(self.status_section(state))
         else:
             parts.append(self.link_section(state.app_key or self.default_app_key))
@@ -213,10 +263,11 @@ class SetupApp:
             parts.append(self.wifi_section())
         if self.shutdown:
             parts.append(
-                "<section><h2>Uitschakelen</h2><p class='muted'>Sluit de Pi netjes af voordat je "
-                "de stekker eruit haalt.</p><form method='post' action='/power/off' "
+                "<section><h2>Pi uitschakelen</h2><p class='muted'>Zet de hele Pi uit, bijvoorbeeld "
+                "om de stekker eruit te halen. Alleen het scherm op zwart? Gebruik dan "
+                "<b>Scherm uit</b>.</p><form method='post' action='/power/off' "
                 "onsubmit=\"return confirm('De Pi uitschakelen? Het scherm gaat uit en de "
-                "presentatie stopt.')\"><button class='danger'>Uitschakelen</button></form></section>")
+                "presentatie stopt.')\"><button class='danger'>Pi uitschakelen</button></form></section>")
         return self.page("".join(parts))
 
     def off_page(self) -> str:
@@ -327,6 +378,52 @@ class SetupApp:
                 "autocomplete='new-password'>"
                 "<button>Opslaan</button></form></section>")
 
+    def screen_section(self, state) -> str:
+        now = self.now()
+        schedule = self._schedule(state)
+        override = screen_time.Override.from_state(state.override)
+        on = screen_time.is_on(schedule, override, now)
+        text = esc(screen_time.describe(schedule, override, now))
+        buttons = []
+        if on:
+            buttons.append("<form method='post' action='/screen/off'>"
+                           "<button>Scherm uit</button></form>")
+        buttons.append("<form method='post' action='/screen/on-until'>"
+                       "<button class='secondary'>Aan houden tot</button>"
+                       "<input type='time' name='until' value='03:00' required></form>")
+        if override and override.active(now):
+            buttons.append("<form method='post' action='/screen/auto'>"
+                           "<button class='secondary'>Volgens schema</button></form>")
+        return ("<section><h2>Scherm</h2>"
+                + (f"<p class='ok'>{text}</p>" if on else f"<p><b>{text}</b></p>")
+                + f"<div class='buttons'>{''.join(buttons)}</div>"
+                "<p class='muted'><b>Scherm uit</b> maakt het scherm zwart tot het schema het "
+                "weer aanzet; de Pi blijft draaien.</p></section>")
+
+    def schedule_section(self, state) -> str:
+        week = screen_time.WeekSchedule.from_state(state.week_schedule)
+        rows = []
+        for day, name in zip(WEEKDAYS, screen_time.DAY_NAMES):
+            period = week.days.get(day) if week else (8 * 60, 18 * 60)
+            start, end = period or (8 * 60, 18 * 60)
+            rows.append(
+                f"<tr><td><label><input type='checkbox' name='{day}_on'{' checked' if period else ''}>"
+                f" {name.capitalize()}</label></td>"
+                f"<td><input type='time' name='{day}_from' value='{screen_time.format_time(start)}'>"
+                f" – <input type='time' name='{day}_to' value='{screen_time.format_time(end)}'></td></tr>")
+        enabled = " checked" if week and week.enabled else ""
+        config_note = ("" if self.config_schedule().enabled
+                       else " (daar staat het nu uit: het scherm is dan altijd aan)")
+        return ("<section><h2>Weekschema</h2><form method='post' action='/schedule'>"
+                f"<p><label><input type='checkbox' name='enabled'{enabled}> "
+                "Weekschema gebruiken</label></p>"
+                f"<table class='week'>{''.join(rows)}</table>"
+                "<p class='muted'>Een dag zonder vinkje is het scherm de hele dag uit. Een eindtijd "
+                "vóór de begintijd loopt door na middernacht (bv. 18:00 – 02:00); 00:00 – 00:00 is "
+                "de hele dag aan.</p><button>Opslaan</button></form>"
+                f"<p class='muted'>Zonder weekschema geldt het schema uit {CONFIG_FILENAME} in "
+                f"Dropbox{config_note}.</p></section>")
+
     def status_section(self, state) -> str:
         s = self.status
         last = s.last_sync.strftime("%d-%m-%Y %H:%M") if s.last_sync else "nog niet"
@@ -386,6 +483,14 @@ def make_handler(app: SetupApp):
                     app.wifi.add(ssid, form.get("password", ""))
                     app.flash(f"Wifi-netwerk '{ssid}' is opgeslagen. De Pi gebruikt het zodra het "
                               "in de buurt is.")
+                elif self.path == "/screen/off":
+                    app.flash(app.screen_off())
+                elif self.path == "/screen/on-until":
+                    app.flash(app.screen_on_until(form.get("until", "")))
+                elif self.path == "/screen/auto":
+                    app.flash(app.screen_auto())
+                elif self.path == "/schedule":
+                    app.flash(app.save_schedule(form))
                 elif self.path == "/power/off" and app.shutdown:
                     app.shutdown()
                     return self._send(app.off_page())
