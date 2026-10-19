@@ -50,15 +50,25 @@ class ScreenPower:
         self._run(self.off_command)
 
 
-def shut_down_pi() -> None:
-    """Shuts the whole Pi down cleanly; needs the polkit rule from install.sh."""
-    log.info("Shutting down the Pi")
+def _systemctl(action: str, what: str) -> None:
+    """Runs `systemctl poweroff` or `reboot`; needs the polkit rule from install.sh."""
     try:
-        r = subprocess.run(["systemctl", "poweroff"], capture_output=True, text=True, timeout=20)
+        r = subprocess.run(["systemctl", action], capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as e:
         raise OSError(f"systemctl werkt niet: {e}") from e
     if r.returncode != 0:
         error = r.stderr.strip() or f"systemctl gaf foutcode {r.returncode}"
         if "denied" in error.lower() or "authentication" in error.lower():
-            error = "geen rechten om de Pi uit te schakelen; draai install.sh opnieuw"
+            error = f"geen rechten om de Pi {what}; draai install.sh opnieuw"
         raise OSError(error)
+
+
+def shut_down_pi() -> None:
+    """Shuts the whole Pi down cleanly."""
+    log.info("Shutting down the Pi")
+    _systemctl("poweroff", "uit te schakelen")
+
+
+def reboot_pi() -> None:
+    log.info("Rebooting the Pi")
+    _systemctl("reboot", "te herstarten")

@@ -495,6 +495,23 @@ class SetupWebTest(unittest.TestCase):
         page = self.post("/power/off")
         self.assertIn("Dat lukte niet: geen rechten", page)
 
+    def test_reboot(self):
+        self.assertNotIn("/power/reboot", self.get())  # no reboot given: no button
+        calls = []
+        self.app.reboot = lambda: calls.append("reboot")
+        page = self.get()
+        self.assertIn("action='/power/reboot'", page)
+        self.assertNotIn("/power/off", page)
+        page = self.post("/power/reboot")
+        self.assertEqual(calls, ["reboot"])
+        self.assertIn("De Pi start opnieuw op", page)
+
+        def refuse():
+            raise OSError("geen rechten om de Pi te herstarten")
+        self.app.reboot = refuse
+        page = self.post("/power/reboot")
+        self.assertIn("Dat lukte niet: geen rechten om de Pi te herstarten", page)
+
     def test_wifi_escapes_names(self):
         nm = FakeNmcli({"x": {"ssid": "<b>x</b>"}}, visible=["'><script>"])
         self.app.wifi = Wifi(run=nm)

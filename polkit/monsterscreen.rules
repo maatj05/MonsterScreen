@@ -1,12 +1,14 @@
-// Lets the MonsterScreen setup page manage wifi networks and shut the Pi
-// down (installed by install.sh).
+// Lets the MonsterScreen setup page manage wifi networks and shut down or
+// reboot the Pi (installed by install.sh).
 polkit.addRule(function(action, subject) {
     if (subject.user == "__USER__" &&
         (action.id == "org.freedesktop.NetworkManager.settings.modify.system" ||
          action.id == "org.freedesktop.NetworkManager.network-control" ||
          action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
          action.id == "org.freedesktop.login1.power-off" ||
-         action.id == "org.freedesktop.login1.power-off-multiple-sessions")) {
+         action.id == "org.freedesktop.login1.power-off-multiple-sessions" ||
+         action.id == "org.freedesktop.login1.reboot" ||
+         action.id == "org.freedesktop.login1.reboot-multiple-sessions")) {
         return polkit.Result.YES;
     }
 });

@@ -96,14 +96,19 @@ je telefoon, verbind je laptop of telefoon ermee, en open het adres dat het
 scherm toont om de wifi van die plek toe te voegen. Een ander of geen
 standaardnetwerk stel je in onder `[wifi]` in `settings.toml`.
 
-### Uitschakelen
+### Herstarten en uitschakelen
 
-Met **Pi uitschakelen** onderaan de instelpagina sluit de Pi netjes af. Wacht
-tot het groene lampje niet meer knippert voordat je de stekker eruit
-haalt; weer aanzetten doe je door de stekker eruit en er weer in te doen.
+Onderaan de instelpagina:
+
+- **Herstarten** start de Pi opnieuw op, handig als iets vastzit. Na ongeveer
+  een minuut draait de presentatie weer.
+- **Pi uitschakelen** sluit de Pi netjes af. Wacht tot het groene lampje niet
+  meer knippert voordat je de stekker eruit haalt; weer aanzetten doe je door
+  de stekker eruit en er weer in te doen.
 
 `install.sh` geeft de service het recht om wifi-netwerken te beheren en de
-Pi uit te schakelen (polkit-regel `/etc/polkit-1/rules.d/50-monsterscreen.rules`).
+Pi te herstarten en uit te schakelen (polkit-regel
+`/etc/polkit-1/rules.d/50-monsterscreen.rules`).
 
 De instelpagina is bereikbaar voor iedereen in het lokale netwerk. Hij toont
 nooit het Dropbox-token, maar wie hem kan openen kan wel een andere

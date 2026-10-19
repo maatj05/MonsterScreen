@@ -110,12 +110,13 @@ class SetupApp:
     def __init__(self, store: StateStore, base_folder: str, status, default_app_key: str = "",
                  client_factory=dropbox_sync.DropboxClient,
                  exchange_code=dropbox_sync.exchange_code, wifi=None, shutdown=None,
-                 config_schedule=Schedule):
+                 reboot=None, config_schedule=Schedule):
         self.store = store
         self.config_schedule = config_schedule  # returns the [schedule] from config.toml
         self.now = dt.datetime.now
         self.wifi = wifi
         self.shutdown = shutdown
+        self.reboot = reboot
         self.base_folder = "/" + base_folder.strip("/")
         self.status = status
         self.default_app_key = default_app_key
@@ -261,14 +262,25 @@ class SetupApp:
             parts.append(self.link_section(state.app_key or self.default_app_key))
         if self.wifi:
             parts.append(self.wifi_section())
-        if self.shutdown:
-            parts.append(
-                "<section><h2>Pi uitschakelen</h2><p class='muted'>Zet de hele Pi uit, bijvoorbeeld "
-                "om de stekker eruit te halen. Alleen het scherm op zwart? Gebruik dan "
-                "<b>Scherm uit</b>.</p><form method='post' action='/power/off' "
-                "onsubmit=\"return confirm('De Pi uitschakelen? Het scherm gaat uit en de "
-                "presentatie stopt.')\"><button class='danger'>Pi uitschakelen</button></form></section>")
+        if self.shutdown or self.reboot:
+            parts.append(self.power_section())
         return self.page("".join(parts))
+
+    def power_section(self) -> str:
+        buttons = []
+        if self.reboot:
+            buttons.append("<form method='post' action='/power/reboot' "
+                           "onsubmit=\"return confirm('De Pi herstarten? Het scherm is ongeveer "
+                           "een minuut zwart.')\"><button class='secondary'>Herstarten</button></form>")
+        if self.shutdown:
+            buttons.append("<form method='post' action='/power/off' "
+                           "onsubmit=\"return confirm('De Pi uitschakelen? Het scherm gaat uit en de "
+                           "presentatie stopt.')\"><button class='danger'>Pi uitschakelen</button></form>")
+        return ("<section><h2>Pi herstarten of uitschakelen</h2><p class='muted'><b>Herstarten</b> "
+                "helpt als iets vastzit; na ongeveer een minuut draait de presentatie weer. "
+                "<b>Pi uitschakelen</b> zet de hele Pi uit, bijvoorbeeld om de stekker eruit te halen. "
+                "Alleen het scherm op zwart? Gebruik dan <b>Scherm uit</b>.</p>"
+                f"<div class='buttons'>{''.join(buttons)}</div></section>")
 
     def off_page(self) -> str:
         return self.page(
@@ -276,6 +288,13 @@ class SetupApp:
             "<p>Wacht tot het groene lampje op de Pi niet meer knippert; daarna kun je de "
             "stekker eruit halen.</p>"
             "<p class='muted'>Weer aanzetten: stekker eruit en er weer in.</p></section>")
+
+    def reboot_page(self) -> str:
+        return self.page(
+            "<section><h2>De Pi start opnieuw op</h2>"
+            "<p>Na ongeveer een minuut toont het scherm weer de presentatie.</p>"
+            "<p class='muted'>Daarna kun je deze pagina weer openen: <a href='/'>opnieuw laden</a>."
+            "</p></section>")
 
     def link_section(self, app_key: str) -> str:
         return (
@@ -494,6 +513,9 @@ def make_handler(app: SetupApp):
                 elif self.path == "/power/off" and app.shutdown:
                     app.shutdown()
                     return self._send(app.off_page())
+                elif self.path == "/power/reboot" and app.reboot:
+                    app.reboot()
+                    return self._send(app.reboot_page())
                 elif self.path == "/wifi/remove" and app.wifi:
                     app.wifi.remove(form.get("name", ""))
                     app.flash("Het wifi-netwerk is verwijderd.")
