@@ -2,7 +2,8 @@
 
 From a laptop or phone: link Dropbox, then pick which presentation (a
 subfolder of the base folder) this screen shows. Picking one also puts a
-default config.toml in it when there is none yet.
+default config.toml in it when there is none yet. The wifi networks the Pi
+connects to are managed here too.
 
 Anyone on the local network can open this page, the same as anyone who can
 walk up to the screen; it never shows the Dropbox token.
@@ -20,6 +21,7 @@ from importlib import resources
 from . import dropbox_sync
 from .content_config import CONFIG_FILENAME
 from .state import StateStore
+from .wifi import WifiError
 
 log = logging.getLogger(__name__)
 
@@ -33,14 +35,14 @@ CSS = """
 body { margin:0; font:16px/1.5 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
 main { max-width:640px; margin:0 auto; padding:24px 16px 48px; }
 h1 { font-size:1.5rem; margin:0 0 20px; }
-h2 { font-size:1.1rem; margin:0 0 12px; }
+h2 { font-size:1.1rem; margin:0 0 12px; } h2.sub { margin-top:20px; }
 section { background:var(--card); border:1px solid var(--line); border-radius:10px;
           padding:18px; margin-bottom:16px; }
 p { margin:0 0 12px; } .muted { color:var(--muted); }
 .ok { color:var(--ok); font-weight:600; } .err { color:var(--err); font-weight:600; }
 .flash { border-left:4px solid var(--accent); }
 .flash.bad { border-left-color:var(--err); }
-input[type=text] { width:100%; padding:10px; font:inherit; color:inherit; background:var(--bg);
+input[type=text], input[type=password] { width:100%; padding:10px; font:inherit; color:inherit; background:var(--bg);
                    border:1px solid var(--line); border-radius:6px; margin-bottom:10px; }
 button, a.button { display:inline-block; padding:10px 16px; font:inherit; font-weight:600;
           border:0; border-radius:6px; background:var(--accent); color:#fff;
@@ -55,6 +57,7 @@ ul.folders a.open:hover { background:var(--bg); }
 ul.folders .chev { color:var(--muted); }
 ul.folders button { padding:6px 12px; }
 ul.folders li > .ok { white-space:nowrap; }
+ul.folders li > span:first-child { flex:1; min-width:0; padding:12px 4px; overflow-wrap:anywhere; }
 .crumbs { overflow-wrap:anywhere; } .crumbs a { color:var(--accent); }
 section > form { margin-bottom:12px; }
 dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 16px; margin:0; }
@@ -97,8 +100,9 @@ def browse_link(parts: list[str]) -> str:
 class SetupApp:
     def __init__(self, store: StateStore, base_folder: str, status, default_app_key: str = "",
                  client_factory=dropbox_sync.DropboxClient,
-                 exchange_code=dropbox_sync.exchange_code):
+                 exchange_code=dropbox_sync.exchange_code, wifi=None):
         self.store = store
+        self.wifi = wifi
         self.base_folder = "/" + base_folder.strip("/")
         self.status = status
         self.default_app_key = default_app_key
@@ -203,6 +207,8 @@ class SetupApp:
                 parts.append(self.status_section(state))
         else:
             parts.append(self.link_section(state.app_key or self.default_app_key))
+        if self.wifi:
+            parts.append(self.wifi_section())
         return self.page("".join(parts))
 
     def link_section(self, app_key: str) -> str:
@@ -275,6 +281,37 @@ class SetupApp:
                 f"<input type='hidden' name='path' value='{esc('/'.join(parts))}'>"
                 f"<button class='{css}'>{esc(label)}</button></form>")
 
+    def wifi_section(self) -> str:
+        head = ("<section><h2>Wifi</h2><p class='muted'>De Pi maakt vanzelf verbinding met een "
+                "bekend netwerk dat in de buurt is.</p>")
+        try:
+            networks = self.wifi.saved()
+        except WifiError as e:
+            return head + f"<p class='err'>Kan de wifi-netwerken niet ophalen: {esc(e)}</p></section>"
+        items = []
+        for n in networks:
+            if n.active:
+                action = "<span class='ok'>✓ verbonden</span>"
+            elif n.ssid == self.wifi.default_ssid:
+                action = "<span class='muted'>standaard</span>"
+            else:
+                action = ("<form method='post' action='/wifi/remove'>"
+                          f"<input type='hidden' name='name' value='{esc(n.name)}'>"
+                          "<button class='secondary'>Verwijderen</button></form>")
+            items.append(f"<li><span>📶 {esc(n.ssid)}</span>{action}</li>")
+        known = (f"<ul class='folders'>{''.join(items)}</ul>" if items
+                 else "<p class='muted'>Nog geen wifi-netwerken bekend.</p>")
+        options = "".join(f"<option value='{esc(name)}'>" for name in self.wifi.visible())
+        return (head + known +
+                "<h2 class='sub'>Netwerk toevoegen</h2>"
+                "<form method='post' action='/wifi/add'>"
+                "<input type='text' name='ssid' list='ssids' placeholder='Naam van het netwerk' "
+                "autocomplete='off' required>"
+                f"<datalist id='ssids'>{options}</datalist>"
+                "<input type='password' name='password' placeholder='Wachtwoord (leeg bij een open netwerk)' "
+                "autocomplete='new-password'>"
+                "<button>Opslaan</button></form></section>")
+
     def status_section(self, state) -> str:
         s = self.status
         last = s.last_sync.strftime("%d-%m-%Y %H:%M") if s.last_sync else "nog niet"
@@ -329,9 +366,17 @@ def make_handler(app: SetupApp):
                     app.flash("Dropbox is gekoppeld. Kies nu welke presentatie dit scherm toont.")
                 elif self.path == "/folder":
                     app.flash(app.choose_folder(form.get("path", "")))
+                elif self.path == "/wifi/add" and app.wifi:
+                    ssid = form.get("ssid", "").strip()
+                    app.wifi.add(ssid, form.get("password", ""))
+                    app.flash(f"Wifi-netwerk '{ssid}' is opgeslagen. De Pi gebruikt het zodra het "
+                              "in de buurt is.")
+                elif self.path == "/wifi/remove" and app.wifi:
+                    app.wifi.remove(form.get("name", ""))
+                    app.flash("Het wifi-netwerk is verwijderd.")
                 else:
                     return self._send(app.page("<p>Niet gevonden.</p>"), HTTPStatus.NOT_FOUND)
-            except (ValueError, dropbox_sync.DropboxError, OSError) as e:
+            except (ValueError, dropbox_sync.DropboxError, WifiError, OSError) as e:
                 log.warning("Setup step failed: %s", e)
                 app.flash(f"Dat lukte niet: {e}", good=False)
             self._redirect()

@@ -18,6 +18,7 @@ from monsterscreen.content_config import ConfigError, ContentConfigLoader, parse
 from monsterscreen.dropbox_sync import DropboxError, FolderSync, content_hash
 from monsterscreen.state import State, StateStore, SyncStatus
 from monsterscreen.transcode import Transcoder
+from monsterscreen.wifi import Wifi, WifiError
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "voorbeeld" / "config.toml"
 
@@ -397,6 +398,119 @@ class SetupWebTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as e:
             urllib.request.urlopen(self.base + "/nope")
         self.assertEqual(e.exception.code, 404)
+
+    def test_wifi_networks(self):
+        nm = FakeNmcli({"netplan-wlan0-Kantoor": {"ssid": "Kantoor", "active": True},
+                        "Oud": {"ssid": "Oud"}}, visible=["Gasten", "Kantoor"])
+        self.app.wifi = Wifi("Mwg mobiel", "Welkom01", run=nm)
+        self.app.wifi.ensure_default()
+        page = self.get()
+        self.assertIn("✓ verbonden", page)  # Kantoor, without a remove button
+        self.assertIn("standaard", page)  # Mwg mobiel
+        self.assertEqual(page.count("Verwijderen"), 1)  # only Oud
+        self.assertIn("<option value='Gasten'>", page)
+
+        page = self.post("/wifi/add", ssid=" Gasten ", password="geheim123")
+        self.assertIn("Wifi-netwerk &#x27;Gasten&#x27; is opgeslagen", page)
+        self.assertEqual(nm.connections["Gasten"]["psk"], "geheim123")
+        page = self.post("/wifi/add", ssid="Kort", password="kort")
+        self.assertIn("8 tot 63 tekens", page)
+        self.assertNotIn("Kort", nm.connections)
+
+        page = self.post("/wifi/remove", name="Oud")
+        self.assertIn("verwijderd", page)
+        self.assertNotIn("Oud", nm.connections)
+        page = self.post("/wifi/remove", name="netplan-wlan0-Kantoor")
+        self.assertIn("in gebruik", page)
+
+    def test_wifi_escapes_names(self):
+        nm = FakeNmcli({"x": {"ssid": "<b>x</b>"}}, visible=["'><script>"])
+        self.app.wifi = Wifi(run=nm)
+        page = self.get()
+        self.assertNotIn("<b>x", page)
+        self.assertNotIn("<script>", page)
+
+
+class FakeNmcli:
+    """Stands in for nmcli: connection name -> {"ssid", "psk", "active", "priority"}."""
+
+    def __init__(self, connections=(), visible=()):
+        self.connections = {name: {"psk": None, "active": False, "priority": 0, **c}
+                            for name, c in dict(connections).items()}
+        self.visible = list(visible)
+
+    @staticmethod
+    def escape(value):
+        return value.replace("\\", "\\\\").replace(":", "\\:")
+
+    def __call__(self, *args):
+        if args == ("-t", "-f", "NAME,TYPE,ACTIVE", "connection", "show"):
+            return "netplan-eth0:802-3-ethernet:yes\n" + "".join(
+                f"{self.escape(n)}:802-11-wireless:{'yes' if c['active'] else 'no'}\n"
+                for n, c in self.connections.items())
+        if args[:2] == ("-g", "802-11-wireless.ssid"):
+            return self.escape(self.connections[args[5]]["ssid"]) + "\n"
+        if args[:4] == ("-t", "-f", "SSID", "device"):
+            return "".join(self.escape(s) + "\n" for s in self.visible) + "\n"  # + a hidden one
+        if args == ("device", "wifi", "rescan"):
+            return ""
+        if args[:2] == ("connection", "add"):
+            opts = dict(zip(args[2::2], args[3::2]))
+            self.connections[opts["con-name"]] = {
+                "ssid": opts["ssid"], "psk": opts.get("wifi-sec.psk"), "active": False,
+                "priority": int(opts["connection.autoconnect-priority"])}
+            return ""
+        if args[:3] == ("connection", "modify", "id"):
+            rest = args[4:]
+            self.connections[args[3]]["psk"] = (None if rest[0] == "remove"
+                                                else dict(zip(rest[::2], rest[1::2]))["wifi-sec.psk"])
+            return ""
+        if args[:3] == ("connection", "delete", "id"):
+            del self.connections[args[3]]
+            return ""
+        raise WifiError(f"unexpected nmcli {args}")
+
+
+class WifiTest(unittest.TestCase):
+    def test_default_network_added_once_at_lowest_priority(self):
+        nm = FakeNmcli({"thuis": {"ssid": "Thuis"}})
+        wifi = Wifi("Mwg mobiel", "Welkom01", run=nm)
+        wifi.ensure_default()
+        self.assertEqual(nm.connections["Mwg mobiel"],
+                         {"ssid": "Mwg mobiel", "psk": "Welkom01", "active": False, "priority": -10})
+        wifi.ensure_default()
+        self.assertEqual(len(nm.connections), 2)
+        Wifi("", "", run=nm).ensure_default()  # no default configured: nothing happens
+        self.assertEqual(len(nm.connections), 2)
+        with self.assertRaises(WifiError):
+            wifi.remove("Mwg mobiel")
+
+    def test_add_updates_known_network(self):
+        nm = FakeNmcli({"netplan-wlan0-Thuis": {"ssid": "Thuis", "psk": "oudwachtwoord"}})
+        wifi = Wifi(run=nm)
+        wifi.add("Thuis", "nieuwwachtwoord")
+        self.assertEqual(list(nm.connections), ["netplan-wlan0-Thuis"])
+        self.assertEqual(nm.connections["netplan-wlan0-Thuis"]["psk"], "nieuwwachtwoord")
+        wifi.add("Thuis", "")  # now an open network
+        self.assertIsNone(nm.connections["netplan-wlan0-Thuis"]["psk"])
+        for ssid, password in (("  ", "geheim123"), ("Thuis", "x" * 64)):
+            with self.assertRaises(WifiError):
+                wifi.add(ssid, password)
+
+    def test_names_with_colons(self):
+        nm = FakeNmcli({"Café: boven": {"ssid": "Café: boven"}}, visible=["A:B", "A:B", "C"])
+        wifi = Wifi(run=nm)
+        self.assertEqual([(n.name, n.ssid) for n in wifi.saved()], [("Café: boven", "Café: boven")])
+        self.assertEqual(wifi.visible(), ["A:B", "C"])
+        wifi.remove("Café: boven")
+        self.assertEqual(nm.connections, {})
+
+    def test_settings_default_network(self):
+        self.assertEqual(settings_mod.Settings().wifi_ssid, "Mwg mobiel")
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "settings.toml"
+            path.write_text('[wifi]\ndefault_ssid = ""\n')
+            self.assertEqual(settings_mod.load(path).wifi_ssid, "")
 
 
 @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")

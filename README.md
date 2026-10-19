@@ -81,6 +81,21 @@ Bij het opstarten toont het scherm 20 seconden hoe je de Pi bereikt: de
 naam, per verbinding wifi (met netwerknaam) of kabel (LAN) met het
 IP-adres, en het adres van de instelpagina. Hetzelfde staat in het logboek.
 
+### Wifi
+
+Onder **Wifi** op de instelpagina staan de netwerken die de Pi kent; voeg
+er een toe (kies uit de netwerken in de buurt of typ de naam) of verwijder
+er een. De Pi maakt vanzelf verbinding met een bekend netwerk in de buurt.
+
+De Pi kent altijd het netwerk **Mwg mobiel** (wachtwoord `Welkom01`), met de
+laagste voorkeur. Op een nieuwe plek: zet een hotspot met die naam aan op
+je telefoon, verbind je laptop of telefoon ermee, en open het adres dat het
+scherm toont om de wifi van die plek toe te voegen. Een ander of geen
+standaardnetwerk stel je in onder `[wifi]` in `settings.toml`.
+
+`install.sh` geeft de service het recht om wifi-netwerken te beheren
+(polkit-regel `/etc/polkit-1/rules.d/50-monsterscreen-wifi.rules`).
+
 De instelpagina is bereikbaar voor iedereen in het lokale netwerk. Hij toont
 nooit het Dropbox-token, maar wie hem kan openen kan wel een andere
 presentatie kiezen. Zet de Pi dus niet in een openbaar gastnetwerk.

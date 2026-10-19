@@ -1,0 +1,9 @@
+// Lets the MonsterScreen setup page manage wifi networks (installed by install.sh).
+polkit.addRule(function(action, subject) {
+    if (subject.user == "__USER__" &&
+        (action.id == "org.freedesktop.NetworkManager.settings.modify.system" ||
+         action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.wifi.scan")) {
+        return polkit.Result.YES;
+    }
+});

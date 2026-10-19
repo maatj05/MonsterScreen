@@ -13,6 +13,9 @@ DEFAULT_APP_KEY = "q34alcs3we24vx7"  # public client id of the Dropbox app, not 
 # v4l2m2m is the Pi's hardware H.264 decoder without copying frames back to RAM; on a
 # Pi 3 it played 1080p without dropped frames where "auto-safe" and "-copy" dropped many.
 DEFAULT_MPV_ARGS = ["--vo=gpu", "--gpu-context=drm", "--hwdec=v4l2m2m", "--profile=fast"]
+# Always known wifi network (a phone hotspot), so a screen in a new place can be reached.
+DEFAULT_WIFI_SSID = "Mwg mobiel"
+DEFAULT_WIFI_PASSWORD = "Welkom01"
 
 
 @dataclass
@@ -22,6 +25,8 @@ class Settings:
     folder: str = ""
     base_folder: str = "/Mediakranten/Present-it"
     web_port: int = 8080
+    wifi_ssid: str = DEFAULT_WIFI_SSID
+    wifi_password: str = DEFAULT_WIFI_PASSWORD
     cache_dir: Path = Path.home() / ".cache" / "monsterscreen"
     state_file: Path = Path.home() / ".config" / "monsterscreen" / "state.json"
     mpv_args: list[str] = field(default_factory=lambda: list(DEFAULT_MPV_ARGS))
@@ -46,6 +51,9 @@ def load(path: Path) -> Settings:
     settings.folder = dropbox.get("folder", "")
     settings.base_folder = dropbox.get("base_folder", settings.base_folder)
     settings.web_port = int(data.get("web", {}).get("port", settings.web_port))
+    wifi = data.get("wifi", {})
+    settings.wifi_ssid = wifi.get("default_ssid", settings.wifi_ssid)
+    settings.wifi_password = wifi.get("default_password", settings.wifi_password)
     paths = data.get("paths", {})
     if "cache_dir" in paths:
         settings.cache_dir = Path(paths["cache_dir"]).expanduser()

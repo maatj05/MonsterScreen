@@ -17,6 +17,7 @@ from .player import Mpv
 from .power import ScreenPower
 from .state import State, StateStore, SyncStatus
 from .transcode import Transcoder, TranscodeThread
+from .wifi import Wifi
 
 log = logging.getLogger("monsterscreen")
 
@@ -96,7 +97,10 @@ def run(settings: settings_mod.Settings) -> None:
     transcode_thread.start()
     SyncThread(store, media_dir, config_loader, status,
                after_sync=transcode_thread.wake.set).start()
-    web.serve(web.SetupApp(store, settings.base_folder, status, settings.app_key), settings.web_port)
+    wifi = Wifi(settings.wifi_ssid, settings.wifi_password)
+    wifi.ensure_default()
+    web.serve(web.SetupApp(store, settings.base_folder, status, settings.app_key, wifi=wifi),
+              settings.web_port)
 
     player = Mpv(settings.mpv_args, str(Path(tempfile.gettempdir()) / "monsterscreen-mpv.sock"))
     power = ScreenPower(settings.power_method, settings.on_command, settings.off_command)

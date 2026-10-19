@@ -12,6 +12,13 @@ base_folder = "/Mediakranten/Present-it"
 [web]
 port = 8080
 
+[wifi]
+# Dit netwerk (een telefoon-hotspot) kent de Pi altijd, met de laagste voorkeur.
+# Op een nieuwe plek: hotspot aan, het scherm toont het adres van de instelpagina,
+# en daar voeg je de wifi van die plek toe. Leeg laten ("") = geen standaardnetwerk.
+# default_ssid = "Mwg mobiel"
+# default_password = "Welkom01"
+
 [paths]
 # Lokale kopie van de gekozen map; hieruit wordt afgespeeld (werkt dus ook offline).
 cache_dir = "~/.cache/monsterscreen"
