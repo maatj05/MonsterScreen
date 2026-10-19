@@ -423,6 +423,23 @@ class SetupWebTest(unittest.TestCase):
         page = self.post("/wifi/remove", name="netplan-wlan0-Kantoor")
         self.assertIn("in gebruik", page)
 
+    def test_shut_down(self):
+        self.assertNotIn("Uitschakelen", self.get())  # no shutdown given: no button
+        calls = []
+        self.app.shutdown = lambda: calls.append("off")
+        page = self.get()
+        self.assertIn("action='/power/off'", page)
+        self.assertIn("confirm(", page)
+        page = self.post("/power/off")
+        self.assertEqual(calls, ["off"])
+        self.assertIn("De Pi wordt uitgeschakeld", page)
+
+        def refuse():
+            raise OSError("geen rechten om de Pi uit te schakelen")
+        self.app.shutdown = refuse
+        page = self.post("/power/off")
+        self.assertIn("Dat lukte niet: geen rechten", page)
+
     def test_wifi_escapes_names(self):
         nm = FakeNmcli({"x": {"ssid": "<b>x</b>"}}, visible=["'><script>"])
         self.app.wifi = Wifi(run=nm)

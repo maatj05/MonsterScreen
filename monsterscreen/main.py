@@ -14,7 +14,7 @@ from . import netinfo, playlist, settings as settings_mod, web
 from .content_config import CONFIG_FILENAME, ContentConfigLoader
 from .dropbox_sync import DropboxClient, FolderSync
 from .player import Mpv
-from .power import ScreenPower
+from .power import ScreenPower, shut_down_pi
 from .state import State, StateStore, SyncStatus
 from .transcode import Transcoder, TranscodeThread
 from .wifi import Wifi
@@ -99,7 +99,8 @@ def run(settings: settings_mod.Settings) -> None:
                after_sync=transcode_thread.wake.set).start()
     wifi = Wifi(settings.wifi_ssid, settings.wifi_password)
     wifi.ensure_default()
-    web.serve(web.SetupApp(store, settings.base_folder, status, settings.app_key, wifi=wifi),
+    web.serve(web.SetupApp(store, settings.base_folder, status, settings.app_key, wifi=wifi,
+                           shutdown=shut_down_pi),
               settings.web_port)
 
     player = Mpv(settings.mpv_args, str(Path(tempfile.gettempdir()) / "monsterscreen-mpv.sock"))

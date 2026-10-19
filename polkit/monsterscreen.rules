@@ -1,0 +1,12 @@
+// Lets the MonsterScreen setup page manage wifi networks and shut the Pi
+// down (installed by install.sh).
+polkit.addRule(function(action, subject) {
+    if (subject.user == "__USER__" &&
+        (action.id == "org.freedesktop.NetworkManager.settings.modify.system" ||
+         action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
+         action.id == "org.freedesktop.login1.power-off" ||
+         action.id == "org.freedesktop.login1.power-off-multiple-sessions")) {
+        return polkit.Result.YES;
+    }
+});

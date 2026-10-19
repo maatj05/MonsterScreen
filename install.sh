@@ -29,10 +29,12 @@ fi
 sed -e "s|__USER__|$USER_NAME|g" -e "s|__DIR__|$DIR|g" \
     "$DIR/systemd/monsterscreen.service" | sudo tee /etc/systemd/system/monsterscreen.service >/dev/null
 
-# The setup page adds and removes wifi networks; allow that without a password.
+# The setup page manages wifi networks and can shut the Pi down; allow that
+# without a password. (The rule used to cover only wifi, under another name.)
 sudo mkdir -p /etc/polkit-1/rules.d
-sed -e "s|__USER__|$USER_NAME|g" "$DIR/polkit/monsterscreen-wifi.rules" \
-    | sudo tee /etc/polkit-1/rules.d/50-monsterscreen-wifi.rules >/dev/null
+sudo rm -f /etc/polkit-1/rules.d/50-monsterscreen-wifi.rules
+sed -e "s|__USER__|$USER_NAME|g" "$DIR/polkit/monsterscreen.rules" \
+    | sudo tee /etc/polkit-1/rules.d/50-monsterscreen.rules >/dev/null
 
 # The login prompt on the screen would otherwise fight with the player.
 sudo systemctl disable --now getty@tty1.service || true

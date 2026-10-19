@@ -3,7 +3,7 @@
 From a laptop or phone: link Dropbox, then pick which presentation (a
 subfolder of the base folder) this screen shows. Picking one also puts a
 default config.toml in it when there is none yet. The wifi networks the Pi
-connects to are managed here too.
+connects to are managed here too, and the Pi can be shut down.
 
 Anyone on the local network can open this page, the same as anyone who can
 walk up to the screen; it never shows the Dropbox token.
@@ -47,6 +47,7 @@ input[type=text], input[type=password] { width:100%; padding:10px; font:inherit;
 button, a.button { display:inline-block; padding:10px 16px; font:inherit; font-weight:600;
           border:0; border-radius:6px; background:var(--accent); color:#fff;
           text-decoration:none; cursor:pointer; }
+button.danger { background:var(--err); }
 button.secondary { background:transparent; color:var(--accent); border:1px solid var(--line); }
 ul.folders { list-style:none; padding:0; margin:0; }
 ul.folders li { display:flex; align-items:center; gap:12px; border-top:1px solid var(--line); }
@@ -100,9 +101,10 @@ def browse_link(parts: list[str]) -> str:
 class SetupApp:
     def __init__(self, store: StateStore, base_folder: str, status, default_app_key: str = "",
                  client_factory=dropbox_sync.DropboxClient,
-                 exchange_code=dropbox_sync.exchange_code, wifi=None):
+                 exchange_code=dropbox_sync.exchange_code, wifi=None, shutdown=None):
         self.store = store
         self.wifi = wifi
+        self.shutdown = shutdown
         self.base_folder = "/" + base_folder.strip("/")
         self.status = status
         self.default_app_key = default_app_key
@@ -209,7 +211,20 @@ class SetupApp:
             parts.append(self.link_section(state.app_key or self.default_app_key))
         if self.wifi:
             parts.append(self.wifi_section())
+        if self.shutdown:
+            parts.append(
+                "<section><h2>Uitschakelen</h2><p class='muted'>Sluit de Pi netjes af voordat je "
+                "de stekker eruit haalt.</p><form method='post' action='/power/off' "
+                "onsubmit=\"return confirm('De Pi uitschakelen? Het scherm gaat uit en de "
+                "presentatie stopt.')\"><button class='danger'>Uitschakelen</button></form></section>")
         return self.page("".join(parts))
+
+    def off_page(self) -> str:
+        return self.page(
+            "<section><h2>De Pi wordt uitgeschakeld</h2>"
+            "<p>Wacht tot het groene lampje op de Pi niet meer knippert; daarna kun je de "
+            "stekker eruit halen.</p>"
+            "<p class='muted'>Weer aanzetten: stekker eruit en er weer in.</p></section>")
 
     def link_section(self, app_key: str) -> str:
         return (
@@ -371,6 +386,9 @@ def make_handler(app: SetupApp):
                     app.wifi.add(ssid, form.get("password", ""))
                     app.flash(f"Wifi-netwerk '{ssid}' is opgeslagen. De Pi gebruikt het zodra het "
                               "in de buurt is.")
+                elif self.path == "/power/off" and app.shutdown:
+                    app.shutdown()
+                    return self._send(app.off_page())
                 elif self.path == "/wifi/remove" and app.wifi:
                     app.wifi.remove(form.get("name", ""))
                     app.flash("Het wifi-netwerk is verwijderd.")
