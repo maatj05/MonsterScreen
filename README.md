@@ -1,4 +1,6 @@
-# Dropbox op het scherm
+# MonsterScreen
+
+Dropbox op het scherm.
 
 Toont de foto's en video's uit een Dropbox-map op het scherm dat aan een
 Raspberry Pi 3 hangt. Elke submap van `Mediakranten/Present-it` is een
@@ -53,7 +55,7 @@ dan wordt zo'n video overgeslagen. Houd video's voor de Pi 3 op maximaal
 3. **Code op de Pi zetten en installeren:**
    ```sh
    sudo apt install -y git
-   git clone https://github.com/maatj05/BMSignage.git && cd BMSignage
+   git clone https://github.com/maatj05/MonsterScreen.git && cd MonsterScreen
    ./install.sh
    ```
 
@@ -73,7 +75,11 @@ Later een andere presentatie tonen of opnieuw koppelen: open dezelfde
 pagina weer. Die toont ook de status (laatste update, aantal bestanden,
 fouten).
 
-Logboek bekijken: `journalctl -u dropbox-signage -f`
+Logboek bekijken: `journalctl -u monsterscreen -f`
+
+Bij het opstarten toont het scherm 20 seconden hoe je de Pi bereikt: de
+naam, per verbinding wifi (met netwerknaam) of kabel (LAN) met het
+IP-adres, en het adres van de instelpagina. Hetzelfde staat in het logboek.
 
 De instelpagina is bereikbaar voor iedereen in het lokale netwerk. Hij toont
 nooit het Dropbox-token, maar wie hem kan openen kan wel een andere
@@ -124,4 +130,4 @@ python3 -m unittest discover -s tests
 ```
 
 Lokaal draaien (met desktop, in een venster): zet in `settings.toml`
-`mpv_args = []` en start `python3 -m signage.main`.
+`mpv_args = []` en start `python3 -m monsterscreen.main`.

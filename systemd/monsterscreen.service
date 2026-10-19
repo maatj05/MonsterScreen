@@ -1,5 +1,5 @@
 [Unit]
-Description=Dropbox folder on the screen
+Description=MonsterScreen: Dropbox folder on the screen
 Wants=network-online.target
 After=network-online.target
 
@@ -7,7 +7,7 @@ After=network-online.target
 User=__USER__
 SupplementaryGroups=video render audio
 WorkingDirectory=__DIR__
-ExecStart=/usr/bin/python3 -m signage.main --settings __DIR__/settings.toml
+ExecStart=/usr/bin/python3 -m monsterscreen.main --settings __DIR__/settings.toml
 Restart=always
 RestartSec=5
 

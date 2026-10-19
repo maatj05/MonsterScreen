@@ -13,11 +13,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from signage import playlist, settings as settings_mod, web
-from signage.content_config import ConfigError, ContentConfigLoader, parse, parse_ranges
-from signage.dropbox_sync import DropboxError, FolderSync, content_hash
-from signage.state import State, StateStore, SyncStatus
-from signage.transcode import Transcoder
+from monsterscreen import netinfo, playlist, settings as settings_mod, web
+from monsterscreen.content_config import ConfigError, ContentConfigLoader, parse, parse_ranges
+from monsterscreen.dropbox_sync import DropboxError, FolderSync, content_hash
+from monsterscreen.state import State, StateStore, SyncStatus
+from monsterscreen.transcode import Transcoder
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "voorbeeld" / "config.toml"
 
@@ -455,7 +455,7 @@ class TranscodeTest(unittest.TestCase):
         self.assertEqual(list(self.out.iterdir()), [])
 
     def test_decoder_choice_by_width(self):
-        from signage import player
+        from monsterscreen import player
         self.assertEqual(player.hwdec_for(1920), "v4l2m2m")
         self.assertEqual(player.hwdec_for(1280), "v4l2m2m")
         self.assertEqual(player.hwdec_for(720), "v4l2m2m-copy")  # black with zero-copy on a Pi 3
@@ -471,6 +471,31 @@ class TranscodeTest(unittest.TestCase):
         self.assertIsNone(t.playable(self.media / "kapot.wmv"))
         self.assertEqual(t.pending(), [])
         self.assertEqual([f for f in self.out.iterdir()], [])  # no leftover .part file
+
+
+class NetinfoTest(unittest.TestCase):
+    def test_split_terse(self):
+        self.assertEqual(netinfo.split_terse(r"*:Mijn\:Netwerk"), ["*", "Mijn:Netwerk"])
+        self.assertEqual(netinfo.split_terse("eth0:ethernet:unavailable"),
+                         ["eth0", "ethernet", "unavailable"])
+
+    def test_summary(self):
+        wifi = netinfo.Link("wifi", ["192.168.1.23"], "Thuis")
+        lan = netinfo.Link("ethernet", ["192.168.1.40"])
+        self.assertEqual(netinfo.format_summary("pisignage", True, [wifi], 8080),
+                         'pisignage\n\n'
+                         'Wifi "Thuis": 192.168.1.23\n\n'
+                         'Instellen: http://192.168.1.23:8080\n'
+                         'of http://pisignage.local:8080')
+        self.assertEqual(netinfo.format_summary("pisignage", False, [lan, wifi], 80),
+                         'pisignage\n\n'
+                         'Kabel (LAN): 192.168.1.40\n'
+                         'Wifi "Thuis": 192.168.1.23\n\n'
+                         'Instellen: http://192.168.1.40:80')
+        self.assertEqual(netinfo.format_summary("pisignage", True, [], 8080),
+                         "pisignage\n\nGeen netwerkverbinding")
+        self.assertEqual(netinfo.format_summary("pisignage", False, [netinfo.Link("wifi")], 8080),
+                         "pisignage\n\nWifi: nog geen IP-adres")
 
 
 if __name__ == "__main__":

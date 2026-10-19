@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import playlist, settings as settings_mod, web
+from . import netinfo, playlist, settings as settings_mod, web
 from .content_config import CONFIG_FILENAME, ContentConfigLoader
 from .dropbox_sync import DropboxClient, FolderSync
 from .player import Mpv
@@ -18,7 +18,10 @@ from .power import ScreenPower
 from .state import State, StateStore, SyncStatus
 from .transcode import Transcoder, TranscodeThread
 
-log = logging.getLogger("signage")
+log = logging.getLogger("monsterscreen")
+
+# How long the network details stay on screen at startup.
+NETWORK_INFO_SECONDS = 20
 
 
 class SyncThread(threading.Thread):
@@ -71,6 +74,16 @@ def setup_message(url: str) -> str:
     return f"Dit scherm is nog niet ingesteld.\n\nGa op een laptop of telefoon naar\n{url}"
 
 
+def show_network_info(player: Mpv, web_port: int) -> None:
+    """Startup screen with how to reach the Pi. Refreshed while it shows,
+    as wifi may only connect a few seconds after the service starts."""
+    log.info("Network: %s", netinfo.summary(web_port).replace("\n", " | "))
+    deadline = time.monotonic() + NETWORK_INFO_SECONDS
+    while time.monotonic() < deadline:
+        player.show_message(netinfo.summary(web_port))
+        time.sleep(2)
+
+
 def run(settings: settings_mod.Settings) -> None:
     media_dir = settings.media_dir
     media_dir.mkdir(parents=True, exist_ok=True)
@@ -85,11 +98,12 @@ def run(settings: settings_mod.Settings) -> None:
                after_sync=transcode_thread.wake.set).start()
     web.serve(web.SetupApp(store, settings.base_folder, status, settings.app_key), settings.web_port)
 
-    player = Mpv(settings.mpv_args, str(Path(tempfile.gettempdir()) / "dropbox-signage-mpv.sock"))
+    player = Mpv(settings.mpv_args, str(Path(tempfile.gettempdir()) / "monsterscreen-mpv.sock"))
     power = ScreenPower(settings.power_method, settings.on_command, settings.off_command)
     screen_on = None
 
     try:
+        show_network_info(player, settings.web_port)
         while True:
             state, version = store.get(), store.version
             if not state.configured:

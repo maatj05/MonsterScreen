@@ -22,8 +22,8 @@ class Settings:
     folder: str = ""
     base_folder: str = "/Mediakranten/Present-it"
     web_port: int = 8080
-    cache_dir: Path = Path.home() / ".cache" / "dropbox-signage"
-    state_file: Path = Path.home() / ".config" / "dropbox-signage" / "state.json"
+    cache_dir: Path = Path.home() / ".cache" / "monsterscreen"
+    state_file: Path = Path.home() / ".config" / "monsterscreen" / "state.json"
     mpv_args: list[str] = field(default_factory=lambda: list(DEFAULT_MPV_ARGS))
     power_method: str = "black"
     on_command: str = ""

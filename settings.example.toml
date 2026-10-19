@@ -14,9 +14,9 @@ port = 8080
 
 [paths]
 # Lokale kopie van de gekozen map; hieruit wordt afgespeeld (werkt dus ook offline).
-cache_dir = "~/.cache/dropbox-signage"
+cache_dir = "~/.cache/monsterscreen"
 # Koppeling en gekozen presentatie, bijgehouden door de instelpagina.
-state_file = "~/.config/dropbox-signage/state.json"
+state_file = "~/.config/monsterscreen/state.json"
 
 [player]
 # Werkt op Raspberry Pi OS Lite (zonder desktop). Met desktop: ["--hwdec=auto-safe"]
