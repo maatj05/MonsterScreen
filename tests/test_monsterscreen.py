@@ -683,6 +683,16 @@ class NetinfoTest(unittest.TestCase):
         self.assertEqual(netinfo.format_summary("pisignage", False, [netinfo.Link("wifi")], 8080),
                          "pisignage\n\nWifi: nog geen IP-adres")
 
+    def test_summary_without_wifi_chip(self):
+        lan = netinfo.Link("ethernet", ["192.168.1.40"])
+        self.assertEqual(netinfo.format_summary("pisignage", False, [lan], 8080, wifi_found=False),
+                         'pisignage\n\n'
+                         'Kabel (LAN): 192.168.1.40\n'
+                         'Wifi: geen wifi-chip gevonden\n\n'
+                         'Instellen: http://192.168.1.40:8080')
+        self.assertEqual(netinfo.format_summary("pisignage", False, [], 8080, wifi_found=False),
+                         "pisignage\n\nGeen netwerkverbinding\nWifi: geen wifi-chip gevonden")
+
 
 class ScreenTimeTest(unittest.TestCase):
     FRIDAY = dt.datetime(2026, 10, 23, 14, 0)

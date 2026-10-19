@@ -66,6 +66,13 @@ def links() -> list[Link]:
     return result
 
 
+def wifi_found() -> bool:
+    """False when the Pi has no working wifi chip, as NetworkManager then lists
+    no wifi device at all. True when that cannot be told (no NetworkManager)."""
+    out = _run("nmcli", "-t", "-f", "TYPE", "device")
+    return out is None or "wifi" in out.split()
+
+
 def _fallback_links() -> list[Link]:
     """Without NetworkManager: only the address of the outgoing interface."""
     try:
@@ -76,7 +83,8 @@ def _fallback_links() -> list[Link]:
         return []
 
 
-def format_summary(hostname: str, mdns: bool, links: list[Link], web_port: int) -> str:
+def format_summary(hostname: str, mdns: bool, links: list[Link], web_port: int,
+                   wifi_found: bool = True) -> str:
     lines = [hostname, ""]
     if not links:
         lines.append("Geen netwerkverbinding")
@@ -88,6 +96,8 @@ def format_summary(hostname: str, mdns: bool, links: list[Link], web_port: int) 
         else:
             label = "Netwerk"
         lines.append(f"{label}: {', '.join(link.addresses) or 'nog geen IP-adres'}")
+    if not wifi_found:
+        lines.append("Wifi: geen wifi-chip gevonden")
     address = next((a for link in links for a in link.addresses), None)
     if address:
         lines += ["", f"Instellen: http://{address}:{web_port}"]
@@ -98,4 +108,4 @@ def format_summary(hostname: str, mdns: bool, links: list[Link], web_port: int) 
 
 def summary(web_port: int) -> str:
     mdns = _run("systemctl", "is-active", "--quiet", "avahi-daemon.service") is not None
-    return format_summary(socket.gethostname(), mdns, links(), web_port)
+    return format_summary(socket.gethostname(), mdns, links(), web_port, wifi_found())

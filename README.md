@@ -80,6 +80,9 @@ Logboek bekijken: `journalctl -u monsterscreen -f`
 Bij het opstarten toont het scherm 20 seconden hoe je de Pi bereikt: de
 naam, per verbinding wifi (met netwerknaam) of kabel (LAN) met het
 IP-adres, en het adres van de instelpagina. Hetzelfde staat in het logboek.
+Staat er *"Wifi: geen wifi-chip gevonden"*, dan start de wifi-chip van de Pi
+niet op (een hardwarefout). Haal de stekker er een halve minuut uit; helpt
+dat niet, dan is de chip kapot en werkt een USB-wifi-stickje wel.
 
 ### Wifi
 
@@ -95,7 +98,7 @@ standaardnetwerk stel je in onder `[wifi]` in `settings.toml`.
 
 ### Uitschakelen
 
-Met **Uitschakelen** onderaan de instelpagina sluit de Pi netjes af. Wacht
+Met **Pi uitschakelen** onderaan de instelpagina sluit de Pi netjes af. Wacht
 tot het groene lampje niet meer knippert voordat je de stekker eruit
 haalt; weer aanzetten doe je door de stekker eruit en er weer in te doen.
 
